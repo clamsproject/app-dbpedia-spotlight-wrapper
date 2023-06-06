@@ -1,5 +1,5 @@
 # Use the same base image version as the clams-python python library version
-FROM ghcr.io/clamsproject/clams-python:1.0.1
+FROM ghcr.io/clamsproject/clams-python-jdk8:1.0.2
 # See https://github.com/orgs/clamsproject/packages?tab=packages&q=clams-python for more base images
 # IF you want to automatically publish this image to the clamsproject organization, 
 # 1. you should have generated this template without --no-github-actions flag
@@ -18,7 +18,15 @@ ENV CLAMS_APP_VERSION ${CLAMS_APP_VERSION}
 # clams-python base images are based on debian distro
 # install more system packages as needed using the apt manager
 ################################################################################
-
+RUN apt install maven -y
+RUN apt install git -y
+RUN git clone https://github.com/dbpedia-spotlight/dbpedia-spotlight-model.git /dbps
+WORKDIR /dbps
+RUN mvn package
+RUN apt install curl -y
+RUN curl -o /dbps/en.tar.gz "https://databus.dbpedia.org/dbpedia/spotlight/spotlight-model/2022.03.01/spotlight-model_lang=en.tar.gz" -L
+RUN tar -x -f en.tar.gz -z
+RUN java -Dfile.encoding=UTF-8 -Xmx10G -jar rest/target/rest-1.1-jar-with-dependencies.jar en http://0.0.0.0:2222/rest &
 ################################################################################
 # main app installation
 COPY ./ /app
