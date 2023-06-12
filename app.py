@@ -1,8 +1,11 @@
 import argparse
 from bs4 import BeautifulSoup
+import json
 from lapps.discriminators import Uri
+import pandas as pd
 import re
 import requests
+from SPARQLWrapper import SPARQLWrapper, JSON
 from typing import Union
 
 from clams import ClamsApp, Restifier
@@ -10,6 +13,8 @@ from mmif import Mmif, View, Annotation, Document, AnnotationTypes, DocumentType
 
 URL = "http://localhost:2222/rest/annotate"
 HEADERS = {'Accept': 'application/json'}
+
+sparql = SPARQLWrapper("http://dbpedia.org/sparql")
 
 
 class DbpediaWrapper(ClamsApp):
@@ -26,6 +31,24 @@ class DbpediaWrapper(ClamsApp):
     def _annotate(self, mmif: Union[str, dict, Mmif], **parameters) -> Mmif:
         # see https://sdk.clams.ai/autodoc/clams.app.html#clams.app.ClamsApp._annotate
 
+        def get_qid(uri: str) -> Union[str, list[str]]:
+            ent = uri.rpartition("/")[-1]
+            sparql.setQuery(f"""
+                PREFIX : <http://dbpedia.org/resource/>
+                SELECT DISTINCT ?wikidata_concept
+                WHERE {{dbr:{ent} owl:sameAs ?wikidata_concept
+                  FILTER (regex(str(?wikidata_concept), \"www.wikidata.org\"))
+                }}
+                LIMIT 10
+            """)
+            sparql.setReturnFormat(JSON)
+            res = sparql.query().convert()
+            res_df = pd.json_normalize(res['results']['bindings'])
+            if len(res_df) > 1:
+                return res_df['wikidata_concept.value'].values.tolist()
+            else:
+                return res_df['wikidata_concept.value'].iloc[0]
+
         def get_ne_links(text: str) -> dict:
             payload = {}
             named_ents = {}
@@ -36,15 +59,19 @@ class DbpediaWrapper(ClamsApp):
                                                             offset_start=resource['@offset'],
                                                             offset_end=int(resource['@offset']) + len(
                                                                 resource['@surfaceForm']),
-                                                            dbpedia_link=resource['@URI'],
                                                             category='')
                 if resource['@URI']:
-                    page = requests.get(resource['@URI'])
+                    uri = resource['@URI']
+                    page = requests.get(uri)
                     soup = BeautifulSoup(page.content, "html.parser")
                     ent_span = soup.find("span", class_="text-nowrap")
                     pattern = re.compile(r'\w+(?=</a>)')
                     category = pattern.search(str(ent_span))
                     named_ents[resource['@surfaceForm']]['category'] = category.group(0)
+                    grounding = {"dbpedia": uri, "wikidata": get_qid(uri)}
+                    named_ents[resource['@surfaceForm']]['grounding'] = json.dumps(grounding)
+                else:
+                    named_ents[resource['@surfaceForm']]['grounding'] = {}
 
             return named_ents
 
@@ -60,9 +87,9 @@ class DbpediaWrapper(ClamsApp):
                 anno = new_view.new_annotation(Uri.NE)
                 anno.add_property('start', entities[e]['offset_start'])
                 anno.add_property('end', entities[e]['offset_end'])
-                anno.add_property('dbpedia_link', entities[e]['dbpedia_link'])
                 anno.add_property('category', entities[e]['category'])
                 anno.add_property('text', entities[e]['text'])
+                anno.add_property('grounding', entities[e]['grounding'])
         return mmif
 
 
