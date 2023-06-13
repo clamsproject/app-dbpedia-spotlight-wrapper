@@ -2,17 +2,13 @@ import argparse
 from bs4 import BeautifulSoup
 import json
 from lapps.discriminators import Uri
-import pandas as pd
 import re
 import requests
 from SPARQLWrapper import SPARQLWrapper, JSON
-from typing import Union
+from typing import Union, Any
 
 from clams import ClamsApp, Restifier
 from mmif import Mmif, View, Annotation, Document, AnnotationTypes, DocumentTypes
-
-URL = "http://localhost:2222/rest/annotate"
-HEADERS = {'Accept': 'application/json'}
 
 sparql = SPARQLWrapper("http://dbpedia.org/sparql")
 
@@ -21,6 +17,8 @@ class DbpediaWrapper(ClamsApp):
 
     def __init__(self):
         super().__init__()
+        self.address = "http://localhost:2222/rest/annotate"
+        self.reqheaders = {'Accept': 'application/json'}
 
     def _appmetadata(self):
         # see https://sdk.clams.ai/autodoc/clams.app.html#clams.app.ClamsApp._load_appmetadata
@@ -31,7 +29,12 @@ class DbpediaWrapper(ClamsApp):
     def _annotate(self, mmif: Union[str, dict, Mmif], **parameters) -> Mmif:
         # see https://sdk.clams.ai/autodoc/clams.app.html#clams.app.ClamsApp._annotate
 
-        def get_qid(uri: str) -> Union[str, list[str]]:
+        def _get_qid(uri: str) -> list[str]:
+            """
+            Query dbpedia endpoint to retrieve Wikidata QIDs
+            :param uri: the dbpedia URI.
+            :return: a list of QIDs
+            """
             ent = uri.rpartition("/")[-1]
             sparql.setQuery(f"""
                 PREFIX : <http://dbpedia.org/resource/>
@@ -43,18 +46,35 @@ class DbpediaWrapper(ClamsApp):
             """)
             sparql.setReturnFormat(JSON)
             res = sparql.query().convert()
-            res_df = pd.json_normalize(res['results']['bindings'])
-            if len(res_df) > 1:
-                return res_df['wikidata_concept.value'].values.tolist()
-            else:
-                return res_df['wikidata_concept.value'].iloc[0]
+            qids = []
+            for binding in res['results']['bindings']:
+                for concept in binding.values():
+                    qids.append(concept['value'])
+            return qids
 
-        def get_ne_links(text: str) -> dict:
-            payload = {}
+        def _post_request(text: str) -> Any:
+            """
+            Makes the Spotlight request and posts it to the server.
+            :param text: the input text to run through Spotlight.
+            :return: json body of the response.
+            """
+            payload = {'text': text}
+            res = requests.post(url=self.address, data=payload, headers=self.reqheaders)
+            # raise http error, if there is one
+            res.raise_for_status()
+            out_json = res.json()
+            if out_json is None:
+                raise Exception("Invalid json output: {}".format(res.text))
+            return out_json
+
+        def _get_ne_links(json_body) -> dict:
+            """
+            Parse the response json for relevant properties and returns them in a dictionary.
+            """
             named_ents = {}
-            payload['text'] = text
-            res = requests.post(url=URL, data=payload, headers=HEADERS)
-            for resource in res.json()['Resources']:
+            if 'Resources' not in json_body:
+                raise Exception("No resources found in Spotlight response.")
+            for resource in json_body['Resources']:
                 named_ents[resource['@surfaceForm']] = dict(text=resource['@surfaceForm'],
                                                             offset_start=resource['@offset'],
                                                             offset_end=int(resource['@offset']) + len(
@@ -68,17 +88,19 @@ class DbpediaWrapper(ClamsApp):
                     pattern = re.compile(r'\w+(?=</a>)')
                     category = pattern.search(str(ent_span))
                     named_ents[resource['@surfaceForm']]['category'] = category.group(0)
-                    grounding = {"dbpedia": uri, "wikidata": get_qid(uri)}
-                    named_ents[resource['@surfaceForm']]['grounding'] = json.dumps(grounding)
+                    grounding = [uri]
+                    grounding.extend(list(_get_qid(uri)))
+                    named_ents[resource['@surfaceForm']]['grounding'] = grounding
                 else:
-                    named_ents[resource['@surfaceForm']]['grounding'] = {}
+                    named_ents[resource['@surfaceForm']]['grounding'] = []
 
             return named_ents
 
         if not isinstance(mmif, Mmif):
             mmif: Mmif = Mmif(mmif)
         for doc in mmif.get_documents_by_type(DocumentTypes.TextDocument):
-            entities = get_ne_links(doc.text_value)
+            res_json = _post_request(doc.text_value)
+            entities = _get_ne_links(res_json)
             did = f"{doc.parent}:{doc.id}" if doc.parent else doc.id
             new_view = mmif.new_view()
             self.sign_view(new_view)
