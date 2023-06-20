@@ -5,7 +5,7 @@ from lapps.discriminators import Uri
 import re
 import requests
 from SPARQLWrapper import SPARQLWrapper, JSON
-from typing import Union, Any
+from typing import Union, Any, List
 
 from clams import ClamsApp, Restifier
 from mmif import Mmif, View, Annotation, Document, AnnotationTypes, DocumentTypes
@@ -29,7 +29,7 @@ class DbpediaWrapper(ClamsApp):
     def _annotate(self, mmif: Union[str, dict, Mmif], **parameters) -> Mmif:
         # see https://sdk.clams.ai/autodoc/clams.app.html#clams.app.ClamsApp._annotate
 
-        def _get_qid(uri: str) -> list[str]:
+        def _get_qid(uri: str) -> List[str]:
             """
             Query dbpedia endpoint to retrieve Wikidata QIDs
             :param uri: the dbpedia URI.
