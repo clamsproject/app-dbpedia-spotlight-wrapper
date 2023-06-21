@@ -37,14 +37,19 @@ def appmetadata() -> AppMetadata:
         # analyzer_version=[l.strip().rsplit('==')[-1] for l in open('requirements.txt').readlines() if re.match(r'^ANALYZER_NAME==', l)][0],
         analyzer_license="Apache 2.0",  # short name for a software license
     )
-    # and then add I/O specifications: an app must have at least one input and ont output
+    # and then add I/O specifications: an app must have at least one input and one output
     metadata.add_input(DocumentTypes.TextDocument)
     metadata.add_output(Uri.NE)
 
     # (optional) and finally add runtime parameter specifications
-    # metadata.add_parameter(name='a_param', description='example parameter description',
-    #                        type='boolean', default='false')
-    # metadata.add_parameter(more...)
+    metadata.add_parameter(name='confidence', description='disambiguation confidence score for linking',
+                           type='number', default='0.5')
+    metadata.add_parameter(name='support', description='resource prominence, i.e. number of in-links in Wikipedia ('
+                                                       'lower bound)', type='integer', default=0)
+    metadata.add_parameter(name='types', description='types filter', type='string')
+    metadata.add_parameter(name='policy', description='(whitelist) selects all entities of the same type; (blacklist) '
+                                                      'selects all entities not of the same type', type='string',
+                           choices=['whitelist', 'blacklist'], default='whitelist')
 
     # CHANGE this line and make sure return the compiled `metadata` instance
     return metadata

@@ -1,6 +1,5 @@
 import argparse
 from bs4 import BeautifulSoup
-import json
 from lapps.discriminators import Uri
 import re
 import requests
@@ -52,13 +51,15 @@ class DbpediaWrapper(ClamsApp):
                     qids.append(concept['value'])
             return qids
 
-        def _post_request(text: str) -> Any:
+        def _post_request(text: str, **kwargs) -> Any:
             """
             Makes the Spotlight request and posts it to the server.
             :param text: the input text to run through Spotlight.
+            :param kwargs: additional parameters for filtering entities.
             :return: json body of the response.
             """
             payload = {'text': text}
+            payload.update(**kwargs)
             res = requests.post(url=self.address, data=payload, headers=self.reqheaders)
             # raise http error, if there is one
             res.raise_for_status()
@@ -99,7 +100,7 @@ class DbpediaWrapper(ClamsApp):
         if not isinstance(mmif, Mmif):
             mmif: Mmif = Mmif(mmif)
         for doc in mmif.get_documents_by_type(DocumentTypes.TextDocument):
-            res_json = _post_request(doc.text_value)
+            res_json = _post_request(doc.text_value, **parameters)
             entities = _get_ne_links(res_json)
             did = f"{doc.parent}:{doc.id}" if doc.parent else doc.id
             new_view = mmif.new_view()
