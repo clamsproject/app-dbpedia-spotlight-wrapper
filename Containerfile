@@ -18,6 +18,7 @@ ENV CLAMS_APP_VERSION ${CLAMS_APP_VERSION}
 # clams-python base images are based on debian distro
 # install more system packages as needed using the apt manager
 ################################################################################
+RUN apt update
 RUN apt install maven -y
 RUN apt install git -y
 RUN git clone https://github.com/dbpedia-spotlight/dbpedia-spotlight-model.git /dbps
