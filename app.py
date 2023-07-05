@@ -1,4 +1,6 @@
 import argparse
+import time
+
 from bs4 import BeautifulSoup
 from lapps.discriminators import Uri
 import re
@@ -14,10 +16,12 @@ sparql = SPARQLWrapper("http://dbpedia.org/sparql")
 
 class DbpediaWrapper(ClamsApp):
 
-    def __init__(self):
+    def __init__(self, hostname="localhost", port=2222):
         super().__init__()
-        self.address = "http://localhost:2222/rest/annotate"
+        self.address = "http://{}:{}/rest/annotate".format(hostname, port)
         self.reqheaders = {'Accept': 'application/json'}
+        response = requests.get(url=self.address, headers=self.reqheaders)
+        wait_for_resource(response, 300, 10)
 
     def _appmetadata(self):
         # see https://sdk.clams.ai/autodoc/clams.app.html#clams.app.ClamsApp._load_appmetadata
@@ -133,12 +137,25 @@ def test(infile, outfile) -> None:
             print("View id={} annotations={} app={}".format(view.id, len(view.annotations), view.metadata['app']))
 
 
+def wait_for_resource(response, timeout, timewait) -> None:
+    timer = 0
+    while response.status_code != 204:
+        time.sleep(timewait)
+        timer += timewait
+        if timer > timeout:
+            raise Exception("Server took too long to respond")
+        if response.status_code == 200:
+            return
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--port", action="store", default="5000", help="set port to listen"
     )
     parser.add_argument("--production", action="store_true", help="run gunicorn server")
+    parser.add_argument("-H", "--hostname", default="localhost", help="hostname (localhost by default)")
+    parser.add_argument("-d", "--dbps_port", default="2222", help="set port to listen for spotlight server")
     parser.add_argument("-t", "--test", action='store_true', help="bypass the server")
     parser.add_argument("infile", nargs='?', help="input MMIF file")
     parser.add_argument("outfile", nargs='?', help="output file")
@@ -149,7 +166,7 @@ if __name__ == "__main__":
         test(parsed_args.infile, parsed_args.outfile)
     else:
         # create the app instance
-        app = DbpediaWrapper()
+        app = DbpediaWrapper(hostname=parsed_args.hostname, port=parsed_args.dbps_port)
 
         http_app = Restifier(app, port=int(parsed_args.port)
                              )
