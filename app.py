@@ -40,13 +40,9 @@ class DbpediaWrapper(ClamsApp):
             :param uri: the dbpedia URI.
             :return: a list of QIDs
             """
-            ent = uri.rpartition("/")[-1]
-            ent = re.escape(ent)
-            ent = re.sub(",", "\\,", ent)
             sparql.setQuery(f"""
-                PREFIX : <http://dbpedia.org/resource/>
                 SELECT DISTINCT ?wikidata_concept
-                WHERE {{dbr:{ent} owl:sameAs ?wikidata_concept
+                WHERE {{<{uri}> owl:sameAs ?wikidata_concept
                   FILTER (regex(str(?wikidata_concept), \"www.wikidata.org\"))
                 }}
                 LIMIT 10
