@@ -22,8 +22,9 @@ class DbpediaWrapper(ClamsApp):
         self.reqheaders = {'Accept': 'application/json'}
         self.session = requests.Session()
         self.session.headers.update(self.reqheaders)
-
-        self.session.get(url=self.address, timeout=500)
+        # ensure that the server is online
+        r = self.session.get(url=self.address)
+        wait_for_resource(r, 300, 10)
 
     def _appmetadata(self):
         # see https://sdk.clams.ai/autodoc/clams.app.html#clams.app.ClamsApp._load_appmetadata
