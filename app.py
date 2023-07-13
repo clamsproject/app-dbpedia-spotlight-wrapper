@@ -24,7 +24,7 @@ class DbpediaWrapper(ClamsApp):
         self.reqheaders = {'Accept': 'application/json'}
         self.session = requests.Session()
         self.session.headers.update(self.reqheaders)
-        retry_adapter = HTTPAdapter(max_retries=Retry(total=10, backoff_factor=0.1, allowed_methods={'POST'},
+        retry_adapter = HTTPAdapter(max_retries=Retry(total=10, backoff_factor=0.1, allowed_methods={'GET', 'POST'},
                                                       status_forcelist=[502, 503, 504]))
         self.session.mount('http://', retry_adapter)
 
@@ -105,6 +105,7 @@ class DbpediaWrapper(ClamsApp):
             return named_ents
 
         # ensure that server is ready
+        self.session.get(self.address)
         if not isinstance(mmif, Mmif):
             mmif: Mmif = Mmif(mmif)
         for doc in mmif.get_documents_by_type(DocumentTypes.TextDocument):
