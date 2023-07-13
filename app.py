@@ -1,10 +1,14 @@
 import argparse
+import time
+
 from bs4 import BeautifulSoup
 from lapps.discriminators import Uri
 import re
 import requests
+from requests.adapters import HTTPAdapter
 from SPARQLWrapper import SPARQLWrapper, JSON
 from typing import Union, Any, List
+from urllib3.util import Retry
 
 from clams import ClamsApp, Restifier
 from mmif import Mmif, View, Annotation, Document, AnnotationTypes, DocumentTypes
@@ -14,10 +18,15 @@ sparql = SPARQLWrapper("http://dbpedia.org/sparql")
 
 class DbpediaWrapper(ClamsApp):
 
-    def __init__(self):
+    def __init__(self, address="localhost:2222"):
         super().__init__()
-        self.address = "http://localhost:2222/rest/annotate"
+        self.address = "http://{}/rest/annotate".format(address)
         self.reqheaders = {'Accept': 'application/json'}
+        self.session = requests.Session()
+        self.session.headers.update(self.reqheaders)
+        retry_adapter = HTTPAdapter(max_retries=Retry(total=10, backoff_factor=0.1, allowed_methods={'GET', 'POST'},
+                                                      status_forcelist=[502, 503, 504]))
+        self.session.mount('http://', retry_adapter)
 
     def _appmetadata(self):
         # see https://sdk.clams.ai/autodoc/clams.app.html#clams.app.ClamsApp._load_appmetadata
@@ -34,11 +43,9 @@ class DbpediaWrapper(ClamsApp):
             :param uri: the dbpedia URI.
             :return: a list of QIDs
             """
-            ent = uri.rpartition("/")[-1]
             sparql.setQuery(f"""
-                PREFIX : <http://dbpedia.org/resource/>
                 SELECT DISTINCT ?wikidata_concept
-                WHERE {{dbr:{ent} owl:sameAs ?wikidata_concept
+                WHERE {{<{uri}> owl:sameAs ?wikidata_concept
                   FILTER (regex(str(?wikidata_concept), \"www.wikidata.org\"))
                 }}
                 LIMIT 10
@@ -60,7 +67,7 @@ class DbpediaWrapper(ClamsApp):
             """
             payload = {'text': text}
             payload.update(**kwargs)
-            res = requests.post(url=self.address, data=payload, headers=self.reqheaders)
+            res = self.session.post(url=self.address, data=payload)
             # raise http error, if there is one
             res.raise_for_status()
             out_json = res.json()
@@ -73,6 +80,7 @@ class DbpediaWrapper(ClamsApp):
             Parse the response json for relevant properties and returns them in a dictionary.
             """
             named_ents = {}
+            re_pattern = re.compile(r'(?<=: ).+(?=,)')
             if 'Resources' not in json_body:
                 raise Exception("No resources found in Spotlight response.")
             for resource in json_body['Resources']:
@@ -83,11 +91,10 @@ class DbpediaWrapper(ClamsApp):
                                                             category='')
                 if resource['@URI']:
                     uri = resource['@URI']
-                    page = requests.get(uri)
+                    page = requests.get(url=uri)
                     soup = BeautifulSoup(page.content, "html.parser")
-                    ent_span = soup.find("span", class_="text-nowrap")
-                    pattern = re.compile(r'\w+(?=</a>)')
-                    category = pattern.search(str(ent_span))
+                    ent_span = soup.find("span", class_="text-nowrap").text
+                    category = re_pattern.search(str(ent_span))
                     named_ents[resource['@surfaceForm']]['category'] = category.group(0)
                     grounding = [uri]
                     grounding.extend(list(_get_qid(uri)))
@@ -97,6 +104,8 @@ class DbpediaWrapper(ClamsApp):
 
             return named_ents
 
+        # ensure that server is ready
+        self.session.get(self.address)
         if not isinstance(mmif, Mmif):
             mmif: Mmif = Mmif(mmif)
         for doc in mmif.get_documents_by_type(DocumentTypes.TextDocument):
@@ -139,6 +148,7 @@ if __name__ == "__main__":
         "--port", action="store", default="5000", help="set port to listen"
     )
     parser.add_argument("--production", action="store_true", help="run gunicorn server")
+    parser.add_argument("-a", "--address", default="localhost:2222", help="set listening address for spotlight server")
     parser.add_argument("-t", "--test", action='store_true', help="bypass the server")
     parser.add_argument("infile", nargs='?', help="input MMIF file")
     parser.add_argument("outfile", nargs='?', help="output file")
@@ -149,7 +159,7 @@ if __name__ == "__main__":
         test(parsed_args.infile, parsed_args.outfile)
     else:
         # create the app instance
-        app = DbpediaWrapper()
+        app = DbpediaWrapper(address=parsed_args.address)
 
         http_app = Restifier(app, port=int(parsed_args.port)
                              )
