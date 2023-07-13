@@ -24,9 +24,9 @@ class DbpediaWrapper(ClamsApp):
         self.reqheaders = {'Accept': 'application/json'}
         self.session = requests.Session()
         self.session.headers.update(self.reqheaders)
-        retry_adapter = HTTPAdapter(max_retries=Retry(total=10, backoff_factor=0.1))
+        retry_adapter = HTTPAdapter(max_retries=Retry(total=10, backoff_factor=0.1, allowed_methods={'POST'},
+                                                      status_forcelist=[502, 503, 504]))
         self.session.mount('http://', retry_adapter)
-        self.resource_available = False
 
     def _appmetadata(self):
         # see https://sdk.clams.ai/autodoc/clams.app.html#clams.app.ClamsApp._load_appmetadata
@@ -36,24 +36,6 @@ class DbpediaWrapper(ClamsApp):
 
     def _annotate(self, mmif: Union[str, dict, Mmif], **parameters) -> Mmif:
         # see https://sdk.clams.ai/autodoc/clams.app.html#clams.app.ClamsApp._annotate
-
-        def _wait_for_resource(timeout: int, timewait: int) -> None:
-            stat_code = self.session.get(url=self.address).status_code
-            timer = 0
-            if stat_code < 200 or stat_code > 400:
-                while 200 <= stat_code <= 400 and timer <= timeout:
-                    try:
-                        r = self.session.get(url=self.address)
-                        stat_code = r.status_code
-                        timer += timewait
-                        time.sleep(timewait)
-                    except requests.exceptions.ConnectionError:
-                        timer += timewait
-                        time.sleep(timewait)
-                if timer > timeout:
-                    raise Exception("Server took too long to respond")
-            self.resource_available = True
-            return
 
         def _get_qid(uri: str) -> List[str]:
             """
@@ -123,8 +105,6 @@ class DbpediaWrapper(ClamsApp):
             return named_ents
 
         # ensure that server is ready
-        if not self.resource_available:
-            _wait_for_resource(300, 10)
         if not isinstance(mmif, Mmif):
             mmif: Mmif = Mmif(mmif)
         for doc in mmif.get_documents_by_type(DocumentTypes.TextDocument):
