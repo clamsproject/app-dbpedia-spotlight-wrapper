@@ -3,6 +3,7 @@ import time
 
 from bs4 import BeautifulSoup
 from lapps.discriminators import Uri
+import logging
 import re
 import requests
 from requests.adapters import HTTPAdapter
@@ -144,9 +145,7 @@ def test(infile, outfile) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--port", action="store", default="5000", help="set port to listen"
-    )
+    parser.add_argument("--port", action="store", default="5000", help="set port to listen")
     parser.add_argument("--production", action="store_true", help="run gunicorn server")
     parser.add_argument("-a", "--address", default="localhost:2222", help="set listening address for spotlight server")
     parser.add_argument("-t", "--test", action='store_true', help="bypass the server")
@@ -161,9 +160,10 @@ if __name__ == "__main__":
         # create the app instance
         app = DbpediaWrapper(address=parsed_args.address)
 
-        http_app = Restifier(app, port=int(parsed_args.port)
-                             )
+        http_app = Restifier(app, port=int(parsed_args.port))
+        # for running the application in production mode
         if parsed_args.production:
             http_app.serve_production()
         else:
+            # development mode
             http_app.run()
