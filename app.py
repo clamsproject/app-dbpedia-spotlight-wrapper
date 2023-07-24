@@ -82,6 +82,7 @@ class DbpediaWrapper(ClamsApp):
             Parse the response json for relevant properties and returns them in a dictionary.
             """
             named_ents = {}
+            wikidata_cats = {}
             re_pattern = re.compile(r'(?<=: ).+(?=,)')
             if 'Resources' not in json_body:
                 raise Exception("No resources found in Spotlight response.")
@@ -94,11 +95,15 @@ class DbpediaWrapper(ClamsApp):
                                                             category='')
                 if resource['@URI']:
                     uri = resource['@URI']
-                    page = requests.get(url=uri)
-                    soup = BeautifulSoup(page.content, "html.parser")
-                    ent_span = soup.find("span", class_="text-nowrap").text
-                    category = re_pattern.search(str(ent_span))
-                    named_ents[resource['@surfaceForm']]['category'] = category.group(0)
+                    if uri in wikidata_cats:
+                        category = wikidata_cats[uri]
+                    else:
+                        page = requests.get(url=uri)
+                        soup = BeautifulSoup(page.content, "html.parser")
+                        ent_span = soup.find("span", class_="text-nowrap").text
+                        category = re_pattern.search(str(ent_span)).group(0)
+                        wikidata_cats[uri] = category
+                    named_ents[resource['@surfaceForm']]['category'] = category
                     grounding = [uri]
                     grounding.extend(list(_get_qid(uri)))
                     named_ents[resource['@surfaceForm']]['grounding'] = grounding
