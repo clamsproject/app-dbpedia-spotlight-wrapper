@@ -67,6 +67,9 @@ class DbpediaWrapper(ClamsApp):
             :return: json body of the response.
             """
             payload = {'text': text}
+            if 'types' in kwargs:
+                # since 'types' permits multiple values, it gets passed in as a list
+                kwargs['types'] = ', '.join(kwargs['types'])
             payload.update(**kwargs)
             res = self.session.post(url=self.address, data=payload)
             # raise http error, if there is one

@@ -46,7 +46,8 @@ def appmetadata() -> AppMetadata:
                            type='number', default='0.5')
     metadata.add_parameter(name='support', description='resource prominence, i.e. number of in-links in Wikipedia ('
                                                        'lower bound)', type='integer', default=0)
-    metadata.add_parameter(name='types', description='types filter', type='string')
+    metadata.add_parameter(name='types', description='limits recognition to certain types of named entities, '
+                                                     'e.g. DBpedia:Place', type='string', multivalued=True)
     metadata.add_parameter(name='policy', description='(whitelist) selects all entities of the same type; (blacklist) '
                                                       'selects all entities not of the same type', type='string',
                            choices=['whitelist', 'blacklist'], default='whitelist')
