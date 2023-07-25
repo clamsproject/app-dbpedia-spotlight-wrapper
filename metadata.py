@@ -31,7 +31,7 @@ def appmetadata() -> AppMetadata:
         url="https://github.com/clamsproject/app-dbpedia-spotlight-wrapper",  # a website where the source code and full documentation of the app is hosted, if you are on the CLAMS team, see ``.github/README.md`` file in this directory.
         # use the following if this app is a wrapper of an existing computational analysis tool
         # (it is very important to pinpoint the primary analyzer version for reproducibility)
-        analyzer_version='version_1.0',
+        analyzer_version='daf5309',
         # if the analyzer is a python app, and it's specified in the requirements.txt
         # this trick can also be useful (replace ANALYZER_NAME with the pypi dist name)
         # analyzer_version=[l.strip().rsplit('==')[-1] for l in open('requirements.txt').readlines() if re.match(r'^ANALYZER_NAME==', l)][0],
