@@ -19,14 +19,14 @@ ENV CLAMS_APP_VERSION ${CLAMS_APP_VERSION}
 # install more system packages as needed using the apt manager
 ################################################################################
 RUN apt update
-RUN apt install maven -y
-RUN apt install git -y
-RUN git clone https://github.com/dbpedia-spotlight/dbpedia-spotlight-model.git /dbps
+RUN apt install -y maven curl
+ADD https://github.com/dbpedia-spotlight/dbpedia-spotlight-model/archive/daf53090b3ea9d1ddd939c455e4c65a18d5b4d2f.tar.gz /dbps.tar.gz
+RUN tar -x -z -f /dbps.tar.gz -C / && mv /dbpedia-spotlight-model-daf53090b3ea9d1ddd939c455e4c65a18d5b4d2f /dbps
 WORKDIR /dbps
 RUN mvn package
-RUN apt install curl -y
 RUN curl -o /dbps/en.tar.gz "https://databus.dbpedia.org/dbpedia/spotlight/spotlight-model/2022.03.01/spotlight-model_lang=en.tar.gz" -L
 RUN tar -x -f en.tar.gz -z
+RUN apt purge -y maven curl && apt autoremove -y
 ################################################################################
 # main app installation
 COPY ./ /app

@@ -37,6 +37,7 @@ class DbpediaWrapper(ClamsApp):
 
     def _annotate(self, mmif: Union[str, dict, Mmif], **parameters) -> Mmif:
         # see https://sdk.clams.ai/autodoc/clams.app.html#clams.app.ClamsApp._annotate
+        self.logger.debug(f"Parameters: {parameters}")
 
         def _get_qid(uri: str) -> List[str]:
             """
@@ -67,9 +68,6 @@ class DbpediaWrapper(ClamsApp):
             :return: json body of the response.
             """
             payload = {'text': text}
-            if 'types' in kwargs:
-                # since 'types' permits multiple values, it gets passed in as a list
-                kwargs['types'] = ', '.join(kwargs['types'])
             payload.update(**kwargs)
             res = self.session.post(url=self.address, data=payload)
             # raise http error, if there is one
@@ -84,10 +82,12 @@ class DbpediaWrapper(ClamsApp):
             Parse the response json for relevant properties and returns them in a dictionary.
             """
             named_ents = {}
+            wikidata_cats = {}
             re_pattern = re.compile(r'(?<=: ).+(?=,)')
             if 'Resources' not in json_body:
                 raise Exception("No resources found in Spotlight response.")
             for resource in json_body['Resources']:
+                self.logger.debug(f"Found resource {resource['@surfaceForm']}, {resource['@URI']}")
                 named_ents[resource['@surfaceForm']] = dict(text=resource['@surfaceForm'],
                                                             offset_start=resource['@offset'],
                                                             offset_end=int(resource['@offset']) + len(
@@ -95,11 +95,15 @@ class DbpediaWrapper(ClamsApp):
                                                             category='')
                 if resource['@URI']:
                     uri = resource['@URI']
-                    page = requests.get(url=uri)
-                    soup = BeautifulSoup(page.content, "html.parser")
-                    ent_span = soup.find("span", class_="text-nowrap").text
-                    category = re_pattern.search(str(ent_span))
-                    named_ents[resource['@surfaceForm']]['category'] = category.group(0)
+                    if uri in wikidata_cats:
+                        category = wikidata_cats[uri]
+                    else:
+                        page = requests.get(url=uri)
+                        soup = BeautifulSoup(page.content, "html.parser")
+                        ent_span = soup.find("span", class_="text-nowrap").text
+                        category = re_pattern.search(str(ent_span)).group(0)
+                        wikidata_cats[uri] = category
+                    named_ents[resource['@surfaceForm']]['category'] = category
                     grounding = [uri]
                     grounding.extend(list(_get_qid(uri)))
                     named_ents[resource['@surfaceForm']]['grounding'] = grounding
@@ -109,15 +113,20 @@ class DbpediaWrapper(ClamsApp):
             return named_ents
 
         # ensure that server is ready
+        self.logger.debug("Waiting for server to be ready...")
         self.session.get(self.address)
         if not isinstance(mmif, Mmif):
             mmif: Mmif = Mmif(mmif)
         for doc in mmif.get_documents_by_type(DocumentTypes.TextDocument):
+            self.logger.debug(f"Processing document {doc.id} @ {doc.location_path()}")
             res_json = _post_request(doc.text_value, **parameters)
+            self.logger.debug(f"Response: {res_json.keys()}")
             entities = _get_ne_links(res_json)
+            self.logger.debug(f"Found {len(entities)} entities.")
             did = f"{doc.parent}:{doc.id}" if doc.parent else doc.id
             new_view = mmif.new_view()
-            self.sign_view(new_view)
+            self.logger.debug(f"Created new view {new_view.id} and siging with {parameters}")
+            self.sign_view(new_view, parameters)
             new_view.new_contain(Uri.NE, document=did)
             for e in entities:
                 anno = new_view.new_annotation(Uri.NE)
@@ -126,6 +135,7 @@ class DbpediaWrapper(ClamsApp):
                 anno.add_property('category', entities[e]['category'])
                 anno.add_property('text', entities[e]['text'])
                 anno.add_property('grounding', entities[e]['grounding'])
+                self.logger.debug(f"Created annotation {anno.id} with grounding {entities[e]['grounding']}")
         return mmif
 
 
@@ -167,6 +177,7 @@ if __name__ == "__main__":
         # for running the application in production mode
         if parsed_args.production:
             http_app.serve_production()
+        # development mode
         else:
-            # development mode
+            app.logger.setLevel(logging.DEBUG)
             http_app.run()
