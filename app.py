@@ -1,10 +1,7 @@
 import argparse
-import time
 
-from bs4 import BeautifulSoup
 from lapps.discriminators import Uri
 import logging
-import re
 import requests
 from requests.adapters import HTTPAdapter
 from SPARQLWrapper import SPARQLWrapper, JSON
@@ -82,28 +79,31 @@ class DbpediaWrapper(ClamsApp):
             Parse the response json for relevant properties and returns them in a dictionary.
             """
             named_ents = {}
-            wikidata_cats = {}
-            re_pattern = re.compile(r'(?<=: ).+(?=,)')
+            type_mappings = {'person': {'dbpedia:person', 'schema:person', 'dbpedia:fictionalcharacter'},
+                             'location': {'dbpedia:place', 'dbpedia:location', 'schema:place'},
+                             'organization': {'dbpedia:organisation', 'schema:organization'},
+                             'product': {'schema:product'}, 'event': {'dbpedia:event', 'schema:event'},
+                             'title': {'dbpedia:work', 'schema:creativework'}}
+
             if 'Resources' not in json_body:
                 raise Exception("No resources found in Spotlight response.")
             for resource in json_body['Resources']:
                 self.logger.debug(f"Found resource {resource['@surfaceForm']}, {resource['@URI']}")
                 named_ents[resource['@surfaceForm']] = dict(text=resource['@surfaceForm'],
-                                                            offset_start=resource['@offset'],
+                                                            offset_start=int(resource['@offset']),
                                                             offset_end=int(resource['@offset']) + len(
                                                                 resource['@surfaceForm']),
                                                             category='')
+                # assign the entity type
+                if resource['@types']:
+                    entity_types: list = resource['@types'].casefold().split(',')
+                    for m in type_mappings:
+                        if type_mappings[m].intersection(entity_types):
+                            named_ents[resource['@surfaceForm']]['category'] = m
+                            break
+                # grounding
                 if resource['@URI']:
                     uri = resource['@URI']
-                    if uri in wikidata_cats:
-                        category = wikidata_cats[uri]
-                    else:
-                        page = requests.get(url=uri)
-                        soup = BeautifulSoup(page.content, "html.parser")
-                        ent_span = soup.find("span", class_="text-nowrap").text
-                        category = re_pattern.search(str(ent_span)).group(0)
-                        wikidata_cats[uri] = category
-                    named_ents[resource['@surfaceForm']]['category'] = category
                     grounding = [uri]
                     grounding.extend(list(_get_qid(uri)))
                     named_ents[resource['@surfaceForm']]['grounding'] = grounding
