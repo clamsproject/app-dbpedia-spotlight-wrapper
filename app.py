@@ -93,7 +93,7 @@ class DbpediaWrapper(ClamsApp):
                                                             offset_start=int(resource['@offset']),
                                                             offset_end=int(resource['@offset']) + len(
                                                                 resource['@surfaceForm']),
-                                                            category='')
+                                                            category='UNKNOWN')
                 # assign the entity type
                 if resource['@types']:
                     entity_types: list = resource['@types'].casefold().split(',')
