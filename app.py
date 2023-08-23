@@ -1,15 +1,16 @@
 import argparse
-
-from lapps.discriminators import Uri
+import http.client
 import logging
-import requests
-from requests.adapters import HTTPAdapter
-from SPARQLWrapper import SPARQLWrapper, JSON
+import time
 from typing import Union, Any, List
-from urllib3.util import Retry
 
+import requests
+from SPARQLWrapper import SPARQLWrapper, JSON
 from clams import ClamsApp, Restifier
-from mmif import Mmif, View, Annotation, Document, AnnotationTypes, DocumentTypes
+from lapps.discriminators import Uri
+from mmif import Mmif, DocumentTypes
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 sparql = SPARQLWrapper("http://dbpedia.org/sparql")
 
@@ -35,6 +36,8 @@ class DbpediaWrapper(ClamsApp):
     def _annotate(self, mmif: Union[str, dict, Mmif], **parameters) -> Mmif:
         # see https://sdk.clams.ai/autodoc/clams.app.html#clams.app.ClamsApp._annotate
         self.logger.debug(f"Parameters: {parameters}")
+        
+        qid_cache = {}
 
         def _get_qid(uri: str) -> List[str]:
             """
@@ -42,19 +45,29 @@ class DbpediaWrapper(ClamsApp):
             :param uri: the dbpedia URI.
             :return: a list of QIDs
             """
-            sparql.setQuery(f"""
-                SELECT DISTINCT ?wikidata_concept
-                WHERE {{<{uri}> owl:sameAs ?wikidata_concept
-                  FILTER (regex(str(?wikidata_concept), \"www.wikidata.org\"))
-                }}
-                LIMIT 10
-            """)
-            sparql.setReturnFormat(JSON)
-            res = sparql.query().convert()
+            if uri in qid_cache:
+                self.logger.debug(f"Using cache for {uri} :{qid_cache[uri]}")
+                return qid_cache[uri]
+            try:
+                self.logger.debug(f"Querying {uri} to wikidata.org")
+                sparql.setQuery(f"""
+                    SELECT DISTINCT ?wikidata_concept
+                    WHERE {{<{uri}> owl:sameAs ?wikidata_concept
+                      FILTER (regex(str(?wikidata_concept), \"www.wikidata.org\"))
+                    }}
+                    LIMIT 10
+                """)
+                sparql.setReturnFormat(JSON)
+                res = sparql.query().convert()
+            except http.client.RemoteDisconnected:
+                self.logger.warning("Remote disconnected. Retrying...")
+                time.sleep(1)
+                return _get_qid(uri)
             qids = []
             for binding in res['results']['bindings']:
                 for concept in binding.values():
                     qids.append(concept['value'])
+            qid_cache[uri] = qids
             return qids
 
         def _post_request(text: str, **kwargs) -> Any:
